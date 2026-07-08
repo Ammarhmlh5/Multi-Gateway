@@ -78,7 +78,7 @@ export default function LoginPage() {
             )}
 
             <Button type="submit" loading={loading} className="w-full">
-              {loading ? 'Signing in…' : 'Sign In'}
+              <span>{loading ? 'Signing in…' : 'Sign In'}</span>
             </Button>
           </form>
 
