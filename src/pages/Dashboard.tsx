@@ -198,7 +198,7 @@ function OverviewTab({
         </div>
         <Button variant="secondary" onClick={onRefresh} loading={loading}>
           <RefreshCw className="h-4 w-4" />
-          <span>Refresh</span>
+          Refresh
         </Button>
       </div>
 
@@ -325,7 +325,7 @@ function GatewaysTab({
         </div>
         <Button variant="secondary" onClick={onRefresh} loading={loading}>
           <RefreshCw className="h-4 w-4" />
-          <span>Refresh</span>
+          Refresh
         </Button>
       </div>
 
@@ -371,7 +371,7 @@ function GatewaysTab({
 
             <Button type="submit" loading={creating} className="w-full">
               <Plus className="h-4 w-4" />
-              <span>Create Gateway</span>
+              Create Gateway
             </Button>
           </form>
 
