@@ -1,7 +1,17 @@
 # Multi-Gateway Telecom Simulation Suite — Go Backend
 
 Lightweight API built with **Gin** that connects directly to the Supabase
-PostgreSQL database and performs dynamic per-gateway table isolation.
+PostgreSQL database and implements a two-tier gateway architecture with
+dynamic per-route table isolation.
+
+## Two-Tier Architecture
+
+- **Level 1 — Telecom Gateways**: Direct connections to telecom companies
+  (e.g. STC, Mobily). These are the exit point for messages leaving the
+  system.
+- **Level 2 — Internal Routes**: Internal paths linked to a telecom gateway.
+  Each route receives messages and forwards them to its assigned Level 1
+  gateway for delivery.
 
 ## Prerequisites
 
@@ -42,7 +52,7 @@ Set via the database. Update the `admin_users` row to change it.
 |--------|------|---------|-------------|
 | GET | `/api/health` | — | Health check |
 | POST | `/api/admin/login` | — | Admin login, returns JWT |
-| POST | `/api/v1/gateway/:gateway_slug/sms/send` | `X-API-KEY` | Ingest SMS into a gateway's dynamic log table |
+| POST | `/api/v1/route/:route_slug/sms/send` | `X-API-KEY` | Ingest SMS into an internal route's log table |
 
 Request body for SMS send:
 
@@ -54,16 +64,18 @@ Request body for SMS send:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/admin/gateways` | Create gateway + dynamic log table |
-| GET | `/api/admin/gateways` | List all gateways |
-| GET | `/api/admin/gateways/:gateway_slug/logs` | Logs from a gateway's dynamic table |
-| GET | `/api/admin/stats` | Total gateways + total logs across DB |
+| POST | `/api/admin/telecom-gateways` | Create telecom gateway (Level 1) |
+| GET | `/api/admin/telecom-gateways` | List all telecom gateways |
+| POST | `/api/admin/internal-routes` | Create internal route (Level 2) + dynamic log table |
+| GET | `/api/admin/internal-routes` | List all internal routes with linked gateway |
+| GET | `/api/admin/internal-routes/:route_slug/logs` | Logs from a route's dynamic table |
+| GET | `/api/admin/stats` | Total telecom gateways + internal routes + logs |
 
 Admin endpoints require `Authorization: Bearer <token>`.
 
 ## Dynamic Table Isolation
 
-When a gateway is created, the backend runs raw SQL to create a dedicated log
-table named `gw_table_<slug>_logs` (e.g. `gw_table_stc_logs`). Each such table
-has: `id` (UUID), `sender_id`, `receiver_phone`, `message_text`, `status`,
-`received_at`. RLS is enabled on each dynamic table to block anon-key access.
+When an internal route is created, the backend runs raw SQL to create a
+dedicated log table named `route_<slug>_logs` (e.g. `route_customer_otp_logs`).
+Each such table has: `id` (UUID), `sender_id`, `receiver_phone`,
+`message_text`, `status`, `received_at`. RLS is enabled on each dynamic table.

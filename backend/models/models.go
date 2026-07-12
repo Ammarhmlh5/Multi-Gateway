@@ -2,12 +2,25 @@ package models
 
 import "time"
 
-type Gateway struct {
+// TelecomGateway — Level 1: direct connection to a telecom company.
+type TelecomGateway struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	Slug      string    `json:"slug"`
+	Provider  string    `json:"provider"`
 	APIKey    string    `json:"api_key"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// InternalRoute — Level 2: internal path linked to a telecom gateway.
+type InternalRoute struct {
+	ID               string    `json:"id"`
+	Name             string    `json:"name"`
+	Slug             string    `json:"slug"`
+	TelecomGatewayID string    `json:"telecom_gateway_id"`
+	TelecomGatewayName string   `json:"telecom_gateway_name"`
+	APIKey           string    `json:"api_key"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 type SMSRequest struct {
@@ -31,6 +44,7 @@ type LoginRequest struct {
 }
 
 type StatsResponse struct {
-	TotalGateways int `json:"total_gateways"`
-	TotalLogs     int `json:"total_logs"`
+	TotalTelecomGateways int `json:"total_telecom_gateways"`
+	TotalInternalRoutes int `json:"total_internal_routes"`
+	TotalLogs            int `json:"total_logs"`
 }

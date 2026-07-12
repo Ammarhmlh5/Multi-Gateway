@@ -7,26 +7,25 @@ import {
   MessageSquare,
 } from 'lucide-react';
 import { api } from '../lib/api';
-import type { Gateway, SMSLog } from '../lib/types';
+import type { InternalRoute, SMSLog } from '../lib/types';
 import { Badge, Card, Select, Spinner } from './ui';
 
 interface LogViewerProps {
-  gateways: Gateway[];
+  routes: InternalRoute[];
 }
 
-export default function LogViewer({ gateways }: LogViewerProps) {
+export default function LogViewer({ routes }: LogViewerProps) {
   const [selectedSlug, setSelectedSlug] = useState('');
   const [logs, setLogs] = useState<SMSLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
 
-  // Auto-select the first gateway when the list loads
   useEffect(() => {
-    if (!selectedSlug && gateways.length > 0) {
-      setSelectedSlug(gateways[0].slug);
+    if (!selectedSlug && routes.length > 0) {
+      setSelectedSlug(routes[0].slug);
     }
-  }, [gateways, selectedSlug]);
+  }, [routes, selectedSlug]);
 
   const fetchLogs = async (slug: string) => {
     if (!slug) {
@@ -36,8 +35,7 @@ export default function LogViewer({ gateways }: LogViewerProps) {
     setLoading(true);
     setError('');
     try {
-      const data = await api.getGatewayLogs(slug);
-      setLogs(data);
+      setLogs(await api.getRouteLogs(slug));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load logs');
       setLogs([]);
@@ -65,7 +63,7 @@ export default function LogViewer({ gateways }: LogViewerProps) {
       <div>
         <h2 className="text-xl font-bold text-slate-900">Live Log Viewer</h2>
         <p className="text-sm text-slate-500">
-          Select a gateway to fetch records from its dedicated log table
+          Select an internal route to fetch records from its dedicated log table
         </p>
       </div>
 
@@ -73,19 +71,19 @@ export default function LogViewer({ gateways }: LogViewerProps) {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
           <div className="flex-1">
             <Select
-              id="gateway-select"
-              label="Gateway"
+              id="route-select"
+              label="Internal Route"
               value={selectedSlug}
               onChange={(e) => setSelectedSlug(e.target.value)}
             >
-              {gateways.length === 0 && (
+              {routes.length === 0 && (
                 <option value="" disabled>
-                  No gateways available
+                  No internal routes available
                 </option>
               )}
-              {gateways.map((gw) => (
-                <option key={gw.id} value={gw.slug}>
-                  {gw.name} ({gw.slug})
+              {routes.map((route) => (
+                <option key={route.id} value={route.slug}>
+                  {route.name} ({route.slug}) → {route.telecom_gateway_name}
                 </option>
               ))}
             </Select>
@@ -142,12 +140,12 @@ export default function LogViewer({ gateways }: LogViewerProps) {
               <Inbox className="h-7 w-7 text-slate-400" />
             </div>
             <p className="mt-3 text-sm font-medium text-slate-600">
-              {selectedSlug ? 'No records found' : 'Select a gateway to view logs'}
+              {selectedSlug ? 'No records found' : 'Select a route to view logs'}
             </p>
             <p className="mt-1 text-xs text-slate-400">
               {selectedSlug
-                ? 'This gateway has no SMS logs in its dynamic table yet.'
-                : 'Choose a gateway from the dropdown above.'}
+                ? 'This route has no SMS logs in its dynamic table yet.'
+                : 'Choose an internal route from the dropdown above.'}
             </p>
           </div>
         ) : (

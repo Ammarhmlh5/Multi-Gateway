@@ -8,39 +8,37 @@ import {
   Plus,
   RefreshCw,
   Server,
+  Radio,
   Inbox,
 } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { api } from '../lib/api';
-import type { Gateway, StatsResponse } from '../lib/types';
-import { Badge, Button, Card, Input, Spinner } from '../components/ui';
+import type {
+  InternalRoute,
+  StatsResponse,
+  TelecomGateway,
+} from '../lib/types';
+import { Badge, Button, Card, Input, Select, Spinner } from '../components/ui';
 import LogViewer from '../components/LogViewer';
 
-type Tab = 'overview' | 'gateways' | 'logs';
+type Tab = 'overview' | 'telecom' | 'routes' | 'logs';
 
 export default function Dashboard() {
   const { logout } = useAuth();
   const [tab, setTab] = useState<Tab>('overview');
   const [stats, setStats] = useState<StatsResponse | null>(null);
-  const [gateways, setGateways] = useState<Gateway[]>([]);
+  const [telecomGateways, setTelecomGateways] = useState<TelecomGateway[]>([]);
+  const [internalRoutes, setInternalRoutes] = useState<InternalRoute[]>([]);
   const [loadingStats, setLoadingStats] = useState(true);
-  const [loadingGateways, setLoadingGateways] = useState(true);
+  const [loadingTG, setLoadingTG] = useState(true);
+  const [loadingIR, setLoadingIR] = useState(true);
   const [statsError, setStatsError] = useState('');
-
-  // Gateway manager form state
-  const [gwName, setGwName] = useState('');
-  const [gwSlug, setGwSlug] = useState('');
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState('');
-  const [createdKey, setCreatedKey] = useState<string | null>(null);
-  const [createdName, setCreatedName] = useState<string | null>(null);
 
   const fetchStats = useCallback(async () => {
     setLoadingStats(true);
     setStatsError('');
     try {
-      const s = await api.getStats();
-      setStats(s);
+      setStats(await api.getStats());
     } catch (err) {
       setStatsError(err instanceof Error ? err.message : 'Failed to load stats');
     } finally {
@@ -48,62 +46,49 @@ export default function Dashboard() {
     }
   }, []);
 
-  const fetchGateways = useCallback(async () => {
-    setLoadingGateways(true);
+  const fetchTelecomGateways = useCallback(async () => {
+    setLoadingTG(true);
     try {
-      const g = await api.getGateways();
-      setGateways(g);
+      setTelecomGateways(await api.getTelecomGateways());
     } catch {
-      // errors surface via stats / form; list silently retries on refresh
+      /* retried on refresh */
     } finally {
-      setLoadingGateways(false);
+      setLoadingTG(false);
+    }
+  }, []);
+
+  const fetchInternalRoutes = useCallback(async () => {
+    setLoadingIR(true);
+    try {
+      setInternalRoutes(await api.getInternalRoutes());
+    } catch {
+      /* retried on refresh */
+    } finally {
+      setLoadingIR(false);
     }
   }, []);
 
   useEffect(() => {
     fetchStats();
-    fetchGateways();
-  }, [fetchStats, fetchGateways]);
+    fetchTelecomGateways();
+    fetchInternalRoutes();
+  }, [fetchStats, fetchTelecomGateways, fetchInternalRoutes]);
 
   const refreshAll = useCallback(() => {
     fetchStats();
-    fetchGateways();
-  }, [fetchStats, fetchGateways]);
-
-  async function handleCreateGateway(e: React.FormEvent) {
-    e.preventDefault();
-    setCreateError('');
-    setCreatedKey(null);
-    setCreatedName(null);
-    if (!gwName.trim() || !gwSlug.trim()) {
-      setCreateError('Both name and slug are required.');
-      return;
-    }
-    setCreating(true);
-    try {
-      const gw = await api.createGateway(gwName.trim(), gwSlug.trim().toLowerCase());
-      setCreatedKey(gw.api_key);
-      setCreatedName(gw.name);
-      setGwName('');
-      setGwSlug('');
-      fetchGateways();
-      fetchStats();
-    } catch (err) {
-      setCreateError(err instanceof Error ? err.message : 'Failed to create gateway');
-    } finally {
-      setCreating(false);
-    }
-  }
+    fetchTelecomGateways();
+    fetchInternalRoutes();
+  }, [fetchStats, fetchTelecomGateways, fetchInternalRoutes]);
 
   const navItems: { id: Tab; label: string; icon: typeof Network }[] = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-    { id: 'gateways', label: 'Gateway Manager', icon: Server },
+    { id: 'telecom', label: 'Telecom Gateways', icon: Server },
+    { id: 'routes', label: 'Internal Routes', icon: Radio },
     { id: 'logs', label: 'Live Log Viewer', icon: ListChecks },
   ];
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Top bar */}
       <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3">
@@ -112,7 +97,7 @@ export default function Dashboard() {
             </div>
             <div>
               <h1 className="text-base font-bold text-slate-900">Telecom Suite</h1>
-              <p className="text-xs text-slate-500">Multi-Gateway Console</p>
+              <p className="text-xs text-slate-500">Two-Tier Gateway Console</p>
             </div>
           </div>
           <Button variant="ghost" onClick={logout} className="text-slate-600">
@@ -123,7 +108,6 @@ export default function Dashboard() {
       </header>
 
       <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:flex-row lg:px-8">
-        {/* Sidebar */}
         <nav className="flex gap-2 lg:w-56 lg:flex-shrink-0 lg:flex-col">
           {navItems.map(({ id, label, icon: Icon }) => (
             <button
@@ -141,7 +125,6 @@ export default function Dashboard() {
           ))}
         </nav>
 
-        {/* Main content */}
         <main className="flex-1 space-y-6">
           {tab === 'overview' && (
             <OverviewTab
@@ -152,29 +135,33 @@ export default function Dashboard() {
             />
           )}
 
-          {tab === 'gateways' && (
-            <GatewaysTab
-              gateways={gateways}
-              loading={loadingGateways}
+          {tab === 'telecom' && (
+            <TelecomTab
+              gateways={telecomGateways}
+              loading={loadingTG}
               onRefresh={refreshAll}
-              gwName={gwName}
-              gwSlug={gwSlug}
-              setGwName={setGwName}
-              setGwSlug={setGwSlug}
-              creating={creating}
-              createError={createError}
-              createdKey={createdKey}
-              createdName={createdName}
-              onCreate={handleCreateGateway}
+              onChanged={refreshAll}
             />
           )}
 
-          {tab === 'logs' && <LogViewer gateways={gateways} />}
+          {tab === 'routes' && (
+            <RoutesTab
+              routes={internalRoutes}
+              telecomGateways={telecomGateways}
+              loading={loadingIR}
+              onRefresh={refreshAll}
+              onChanged={refreshAll}
+            />
+          )}
+
+          {tab === 'logs' && <LogViewer routes={internalRoutes} />}
         </main>
       </div>
     </div>
   );
 }
+
+// ── Overview ───────────────────────────────────────────────────────────────
 
 function OverviewTab({
   stats,
@@ -193,7 +180,7 @@ function OverviewTab({
         <div>
           <h2 className="text-xl font-bold text-slate-900">Dashboard Overview</h2>
           <p className="text-sm text-slate-500">
-            Live counters pulled from the database
+            Live counters from the two-tier gateway system
           </p>
         </div>
         <Button variant="secondary" onClick={onRefresh} loading={loading}>
@@ -208,45 +195,63 @@ function OverviewTab({
         </Card>
       )}
 
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
         <StatCard
-          icon={<Network className="h-6 w-6" />}
-          label="Total Active Gateways"
-          value={stats?.total_gateways}
+          icon={<Server className="h-6 w-6" />}
+          label="Telecom Gateways (L1)"
+          value={stats?.total_telecom_gateways}
           loading={loading}
           accent="teal"
         />
         <StatCard
-          icon={<Inbox className="h-6 w-6" />}
-          label="Total Logs Across Database"
-          value={stats?.total_logs}
+          icon={<Radio className="h-6 w-6" />}
+          label="Internal Routes (L2)"
+          value={stats?.total_internal_routes}
           loading={loading}
           accent="blue"
+        />
+        <StatCard
+          icon={<Inbox className="h-6 w-6" />}
+          label="Total Logs Across DB"
+          value={stats?.total_logs}
+          loading={loading}
+          accent="amber"
         />
       </div>
 
       <Card className="p-5">
         <div className="flex items-center gap-2 text-slate-700">
           <Activity className="h-5 w-5 text-teal-600" />
-          <h3 className="font-semibold">How it works</h3>
+          <h3 className="font-semibold">Two-Tier Architecture</h3>
         </div>
-        <ol className="mt-3 space-y-2 text-sm text-slate-600">
-          <li>
-            1. Create a gateway in <strong>Gateway Manager</strong> — this
-            provisions a dedicated log table in the database.
-          </li>
-          <li>
-            2. Send SMS into a gateway via{' '}
-            <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">
-              POST /api/v1/gateway/&lt;slug&gt;/sms/send
-            </code>{' '}
-            with the gateway's <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">X-API-KEY</code>.
-          </li>
-          <li>
-            3. Inspect per-gateway records in the{' '}
-            <strong>Live Log Viewer</strong>.
-          </li>
-        </ol>
+        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="rounded-lg border border-teal-200 bg-teal-50 p-4">
+            <div className="flex items-center gap-2">
+              <Server className="h-5 w-5 text-teal-600" />
+              <h4 className="text-sm font-semibold text-teal-800">
+                Level 1 — Telecom Gateways
+              </h4>
+            </div>
+            <p className="mt-2 text-xs text-teal-700">
+              Direct connections to telecom companies (e.g. STC, Mobily). These
+              are the exit point — messages leave the system through these
+              gateways to reach the telecom provider.
+            </p>
+          </div>
+          <div className="rounded-lg border border-sky-200 bg-sky-50 p-4">
+            <div className="flex items-center gap-2">
+              <Radio className="h-5 w-5 text-sky-600" />
+              <h4 className="text-sm font-semibold text-sky-800">
+                Level 2 — Internal Routes
+              </h4>
+            </div>
+            <p className="mt-2 text-xs text-sky-700">
+              Internal paths linked to a telecom gateway. Each route receives
+              messages and forwards them to its assigned Level 1 gateway for
+              delivery.
+            </p>
+          </div>
+        </div>
       </Card>
     </div>
   );
@@ -263,11 +268,12 @@ function StatCard({
   label: string;
   value?: number;
   loading: boolean;
-  accent: 'teal' | 'blue';
+  accent: 'teal' | 'blue' | 'amber';
 }) {
   const accents = {
     teal: 'bg-teal-50 text-teal-600 ring-teal-600/10',
     blue: 'bg-sky-50 text-sky-600 ring-sky-600/10',
+    amber: 'bg-amber-50 text-amber-600 ring-amber-600/10',
   };
   return (
     <Card className="p-6">
@@ -287,40 +293,63 @@ function StatCard({
   );
 }
 
-function GatewaysTab({
+// ── Telecom Gateways (Level 1) ──────────────────────────────────────────────
+
+function TelecomTab({
   gateways,
   loading,
   onRefresh,
-  gwName,
-  gwSlug,
-  setGwName,
-  setGwSlug,
-  creating,
-  createError,
-  createdKey,
-  createdName,
-  onCreate,
+  onChanged,
 }: {
-  gateways: Gateway[];
+  gateways: TelecomGateway[];
   loading: boolean;
   onRefresh: () => void;
-  gwName: string;
-  gwSlug: string;
-  setGwName: (v: string) => void;
-  setGwSlug: (v: string) => void;
-  creating: boolean;
-  createError: string;
-  createdKey: string | null;
-  createdName: string | null;
-  onCreate: (e: React.FormEvent) => void;
+  onChanged: () => void;
 }) {
+  const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
+  const [provider, setProvider] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState('');
+  const [createdKey, setCreatedKey] = useState<string | null>(null);
+  const [createdName, setCreatedName] = useState<string | null>(null);
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    setCreatedKey(null);
+    setCreatedName(null);
+    if (!name.trim() || !slug.trim() || !provider.trim()) {
+      setError('Name, slug, and provider are all required.');
+      return;
+    }
+    setCreating(true);
+    try {
+      const gw = await api.createTelecomGateway(
+        name.trim(),
+        slug.trim().toLowerCase(),
+        provider.trim(),
+      );
+      setCreatedKey(gw.api_key);
+      setCreatedName(gw.name);
+      setName('');
+      setSlug('');
+      setProvider('');
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create gateway');
+    } finally {
+      setCreating(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-slate-900">Gateway Manager</h2>
+          <h2 className="text-xl font-bold text-slate-900">Telecom Gateways</h2>
           <p className="text-sm text-slate-500">
-            Create gateways and view their credentials
+            Level 1 — Direct connections to telecom companies
           </p>
         </div>
         <Button variant="secondary" onClick={onRefresh} loading={loading}>
@@ -330,45 +359,37 @@ function GatewaysTab({
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-        {/* Create form */}
         <Card className="p-6 lg:col-span-2">
           <div className="flex items-center gap-2 text-slate-700">
             <Plus className="h-5 w-5 text-teal-600" />
-            <h3 className="font-semibold">Create New Gateway</h3>
+            <h3 className="font-semibold">Create Telecom Gateway</h3>
           </div>
-          <p className="mt-1 text-xs text-slate-500">
-            A dedicated log table is created automatically in the database.
-          </p>
-          <form onSubmit={onCreate} className="mt-4 space-y-4">
+          <form onSubmit={handleCreate} className="mt-4 space-y-4">
             <Input
-              id="gw-name"
+              id="tg-name"
               label="Gateway Name"
-              value={gwName}
-              onChange={(e) => setGwName(e.target.value)}
-              placeholder="e.g. STC Pay Gateway"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. STC Production Gateway"
               required
             />
             <Input
-              id="gw-slug"
-              label="Slug (URL-safe, lowercase)"
-              value={gwSlug}
-              onChange={(e) => setGwSlug(e.target.value.toLowerCase())}
-              placeholder="e.g. stc_pay"
+              id="tg-slug"
+              label="Slug (lowercase, URL-safe)"
+              value={slug}
+              onChange={(e) => setSlug(e.target.value.toLowerCase())}
+              placeholder="e.g. stc_prod"
               required
             />
-            <p className="text-xs text-slate-500">
-              Only lowercase letters, numbers, and underscores. The log table
-              will be named{' '}
-              <code className="rounded bg-slate-100 px-1 py-0.5">
-                gw_table_{gwSlug || '<slug>'}_logs
-              </code>
-              .
-            </p>
-
-            {createError && (
-              <p className="text-sm text-red-600">{createError}</p>
-            )}
-
+            <Input
+              id="tg-provider"
+              label="Telecom Provider"
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+              placeholder="e.g. STC"
+              required
+            />
+            {error && <p className="text-sm text-red-600">{error}</p>}
             <Button type="submit" loading={creating} className="w-full">
               <Plus className="h-4 w-4" />
               Create Gateway
@@ -378,20 +399,16 @@ function GatewaysTab({
           {createdKey && (
             <div className="mt-5 rounded-lg border border-teal-200 bg-teal-50 p-4">
               <p className="text-sm font-semibold text-teal-800">
-                Gateway "{createdName}" created successfully
+                "{createdName}" created successfully
               </p>
               <p className="mt-2 text-xs text-teal-700">API Key:</p>
               <code className="mt-1 block break-all rounded bg-white px-2 py-1.5 text-xs text-slate-800 ring-1 ring-teal-200">
                 {createdKey}
               </code>
-              <p className="mt-2 text-xs text-teal-700">
-                Use this key in the <code>X-API-KEY</code> header to send SMS.
-              </p>
             </div>
           )}
         </Card>
 
-        {/* Gateways list */}
         <Card className="lg:col-span-3">
           <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
             <h3 className="font-semibold text-slate-700">Existing Gateways</h3>
@@ -403,8 +420,8 @@ function GatewaysTab({
                 <tr>
                   <th className="px-5 py-3 font-medium">Name</th>
                   <th className="px-5 py-3 font-medium">Slug</th>
+                  <th className="px-5 py-3 font-medium">Provider</th>
                   <th className="px-5 py-3 font-medium">API Key</th>
-                  <th className="px-5 py-3 font-medium">Created</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -417,27 +434,212 @@ function GatewaysTab({
                 ) : gateways.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="px-5 py-10 text-center text-slate-400">
-                      No gateways yet. Create one using the form.
+                      No telecom gateways yet.
                     </td>
                   </tr>
                 ) : (
                   gateways.map((gw) => (
                     <tr key={gw.id} className="hover:bg-slate-50/70">
-                      <td className="px-5 py-3 font-medium text-slate-800">
-                        {gw.name}
-                      </td>
+                      <td className="px-5 py-3 font-medium text-slate-800">{gw.name}</td>
                       <td className="px-5 py-3">
                         <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-700">
                           {gw.slug}
                         </code>
                       </td>
                       <td className="px-5 py-3">
+                        <Badge color="teal">{gw.provider}</Badge>
+                      </td>
+                      <td className="px-5 py-3">
                         <code className="text-xs text-slate-500">
                           {gw.api_key.slice(0, 14)}…
                         </code>
                       </td>
-                      <td className="px-5 py-3 text-slate-500">
-                        {new Date(gw.created_at).toLocaleDateString()}
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ── Internal Routes (Level 2) ──────────────────────────────────────────────
+
+function RoutesTab({
+  routes,
+  telecomGateways,
+  loading,
+  onRefresh,
+  onChanged,
+}: {
+  routes: InternalRoute[];
+  telecomGateways: TelecomGateway[];
+  loading: boolean;
+  onRefresh: () => void;
+  onChanged: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
+  const [tgId, setTgId] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState('');
+  const [createdKey, setCreatedKey] = useState<string | null>(null);
+  const [createdName, setCreatedName] = useState<string | null>(null);
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    setCreatedKey(null);
+    setCreatedName(null);
+    if (!name.trim() || !slug.trim() || !tgId) {
+      setError('Name, slug, and telecom gateway are all required.');
+      return;
+    }
+    setCreating(true);
+    try {
+      const route = await api.createInternalRoute(
+        name.trim(),
+        slug.trim().toLowerCase(),
+        tgId,
+      );
+      setCreatedKey(route.api_key);
+      setCreatedName(route.name);
+      setName('');
+      setSlug('');
+      setTgId('');
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create route');
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-slate-900">Internal Routes</h2>
+          <p className="text-sm text-slate-500">
+            Level 2 — Internal paths linked to telecom gateways
+          </p>
+        </div>
+        <Button variant="secondary" onClick={onRefresh} loading={loading}>
+          <RefreshCw className="h-4 w-4" />
+          Refresh
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+        <Card className="p-6 lg:col-span-2">
+          <div className="flex items-center gap-2 text-slate-700">
+            <Plus className="h-5 w-5 text-sky-600" />
+            <h3 className="font-semibold">Create Internal Route</h3>
+          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            A dedicated log table is created automatically for each route.
+          </p>
+          <form onSubmit={handleCreate} className="mt-4 space-y-4">
+            <Input
+              id="ir-name"
+              label="Route Name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Customer OTP Route"
+              required
+            />
+            <Input
+              id="ir-slug"
+              label="Slug (lowercase, URL-safe)"
+              value={slug}
+              onChange={(e) => setSlug(e.target.value.toLowerCase())}
+              placeholder="e.g. customer_otp"
+              required
+            />
+            <Select
+              id="ir-telecom"
+              label="Linked Telecom Gateway"
+              value={tgId}
+              onChange={(e) => setTgId(e.target.value)}
+            >
+              <option value="" disabled>
+                Select a telecom gateway…
+              </option>
+              {telecomGateways.map((gw) => (
+                <option key={gw.id} value={gw.id}>
+                  {gw.name} ({gw.provider})
+                </option>
+              ))}
+            </Select>
+            {error && <p className="text-sm text-red-600">{error}</p>}
+            <Button type="submit" loading={creating} className="w-full">
+              <Plus className="h-4 w-4" />
+              Create Route
+            </Button>
+          </form>
+
+          {createdKey && (
+            <div className="mt-5 rounded-lg border border-sky-200 bg-sky-50 p-4">
+              <p className="text-sm font-semibold text-sky-800">
+                "{createdName}" created successfully
+              </p>
+              <p className="mt-2 text-xs text-sky-700">API Key:</p>
+              <code className="mt-1 block break-all rounded bg-white px-2 py-1.5 text-xs text-slate-800 ring-1 ring-sky-200">
+                {createdKey}
+              </code>
+            </div>
+          )}
+        </Card>
+
+        <Card className="lg:col-span-3">
+          <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+            <h3 className="font-semibold text-slate-700">Existing Routes</h3>
+            <Badge color="teal">{routes.length} total</Badge>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="px-5 py-3 font-medium">Name</th>
+                  <th className="px-5 py-3 font-medium">Slug</th>
+                  <th className="px-5 py-3 font-medium">Linked Gateway</th>
+                  <th className="px-5 py-3 font-medium">API Key</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {loading ? (
+                  <tr>
+                    <td colSpan={4} className="px-5 py-10 text-center">
+                      <Spinner className="mx-auto" />
+                    </td>
+                  </tr>
+                ) : routes.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-5 py-10 text-center text-slate-400">
+                      No internal routes yet.
+                    </td>
+                  </tr>
+                ) : (
+                  routes.map((route) => (
+                    <tr key={route.id} className="hover:bg-slate-50/70">
+                      <td className="px-5 py-3 font-medium text-slate-800">
+                        {route.name}
+                      </td>
+                      <td className="px-5 py-3">
+                        <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-700">
+                          {route.slug}
+                        </code>
+                      </td>
+                      <td className="px-5 py-3">
+                        <Badge color="blue">{route.telecom_gateway_name}</Badge>
+                      </td>
+                      <td className="px-5 py-3">
+                        <code className="text-xs text-slate-500">
+                          {route.api_key.slice(0, 14)}…
+                        </code>
                       </td>
                     </tr>
                   ))

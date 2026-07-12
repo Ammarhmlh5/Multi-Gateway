@@ -110,7 +110,7 @@ export function Select({ label, className = '', id, children, ...props }: Select
 
 interface BadgeProps {
   children: ReactNode;
-  color?: 'teal' | 'slate' | 'green' | 'amber' | 'red';
+  color?: 'teal' | 'slate' | 'green' | 'amber' | 'red' | 'blue';
 }
 
 export function Badge({ children, color = 'slate' }: BadgeProps) {
@@ -120,6 +120,7 @@ export function Badge({ children, color = 'slate' }: BadgeProps) {
     green: 'bg-green-50 text-green-700 ring-green-600/20',
     amber: 'bg-amber-50 text-amber-700 ring-amber-600/20',
     red: 'bg-red-50 text-red-700 ring-red-600/20',
+    blue: 'bg-sky-50 text-sky-700 ring-sky-600/20',
   };
   return (
     <span

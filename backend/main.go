@@ -22,7 +22,6 @@ func main() {
 
 	r := gin.Default()
 
-	// CORS: allow the Bolt frontend (and any local dev origin) to call the API.
 	r.Use(func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
@@ -50,13 +49,21 @@ func main() {
 		admin := api.Group("/admin")
 		admin.Use(middleware.JWTAuth(cfg.JWTSecret))
 		{
-			admin.POST("/gateways", gatewayHandler.CreateGateway)
-			admin.GET("/gateways", gatewayHandler.ListGateways)
-			admin.GET("/gateways/:gateway_slug/logs", gatewayHandler.GetGatewayLogs)
+			// Level 1: Telecom Gateways
+			admin.POST("/telecom-gateways", gatewayHandler.CreateTelecomGateway)
+			admin.GET("/telecom-gateways", gatewayHandler.ListTelecomGateways)
+
+			// Level 2: Internal Routes
+			admin.POST("/internal-routes", gatewayHandler.CreateInternalRoute)
+			admin.GET("/internal-routes", gatewayHandler.ListInternalRoutes)
+			admin.GET("/internal-routes/:route_slug/logs", gatewayHandler.GetRouteLogs)
+
+			// Stats
 			admin.GET("/stats", statsHandler.Stats)
 		}
 
-		api.POST("/v1/gateway/:gateway_slug/sms/send", smsHandler.SendSMS)
+		// SMS ingestion into an internal route
+		api.POST("/v1/route/:route_slug/sms/send", smsHandler.SendSMS)
 	}
 
 	log.Printf("Telecom Suite API listening on port %s", cfg.Port)

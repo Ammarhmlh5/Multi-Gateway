@@ -19,11 +19,11 @@ func NewSMSHandler(db *sql.DB) *SMSHandler {
 	return &SMSHandler{DB: db}
 }
 
-// SendSMS validates the gateway slug + X-API-KEY header and inserts the
-// incoming SMS into that gateway's dedicated dynamic log table.
-// POST /api/v1/gateway/:gateway_slug/sms/send
+// SendSMS validates the internal route slug + X-API-KEY header and inserts
+// the incoming SMS into that route's dedicated dynamic log table.
+// POST /api/v1/route/:route_slug/sms/send
 func (h *SMSHandler) SendSMS(c *gin.Context) {
-	slug := strings.ToLower(c.Param("gateway_slug"))
+	slug := strings.ToLower(c.Param("route_slug"))
 	if err := validateSlug(slug); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -37,11 +37,11 @@ func (h *SMSHandler) SendSMS(c *gin.Context) {
 
 	var storedKey string
 	err := h.DB.QueryRow(
-		"SELECT api_key FROM gateways WHERE slug = $1",
+		"SELECT api_key FROM internal_routes WHERE slug = $1",
 		slug,
 	).Scan(&storedKey)
 	if err == sql.ErrNoRows {
-		c.JSON(http.StatusNotFound, gin.H{"error": "gateway not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "internal route not found"})
 		return
 	}
 	if err != nil {
@@ -63,7 +63,7 @@ func (h *SMSHandler) SendSMS(c *gin.Context) {
 		return
 	}
 
-	table := logTableName(slug)
+	table := routeLogTableName(slug)
 	insertSQL := fmt.Sprintf(
 		`INSERT INTO %s (sender_id, receiver_phone, message_text, status)
 		 VALUES ($1, $2, $3, 'received')
@@ -77,10 +77,10 @@ func (h *SMSHandler) SendSMS(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
-		"message":      "SMS accepted",
-		"id":           id,
-		"received_at":  receivedAt,
-		"gateway":      slug,
-		"status":       "received",
+		"message":     "SMS accepted",
+		"id":          id,
+		"received_at": receivedAt,
+		"route":       slug,
+		"status":      "received",
 	})
 }

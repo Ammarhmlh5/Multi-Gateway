@@ -1,8 +1,9 @@
 import type {
-  Gateway,
+  InternalRoute,
   LoginResponse,
   SMSLog,
   StatsResponse,
+  TelecomGateway,
 } from './types';
 
 const API_BASE_URL =
@@ -61,29 +62,59 @@ export const api = {
     return handleResponse<LoginResponse>(res);
   },
 
-  async getGateways(): Promise<Gateway[]> {
-    const res = await fetch(`${API_BASE_URL}/api/admin/gateways`, {
+  // ── Telecom Gateways (Level 1) ──────────────────────────────────────────
+
+  async getTelecomGateways(): Promise<TelecomGateway[]> {
+    const res = await fetch(`${API_BASE_URL}/api/admin/telecom-gateways`, {
       headers: authHeaders(),
     });
-    return handleResponse<Gateway[]>(res);
+    return handleResponse<TelecomGateway[]>(res);
   },
 
-  async createGateway(name: string, slug: string): Promise<Gateway> {
-    const res = await fetch(`${API_BASE_URL}/api/admin/gateways`, {
+  async createTelecomGateway(
+    name: string,
+    slug: string,
+    provider: string,
+  ): Promise<TelecomGateway> {
+    const res = await fetch(`${API_BASE_URL}/api/admin/telecom-gateways`, {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ name, slug }),
+      body: JSON.stringify({ name, slug, provider }),
     });
-    return handleResponse<Gateway>(res);
+    return handleResponse<TelecomGateway>(res);
   },
 
-  async getGatewayLogs(slug: string): Promise<SMSLog[]> {
+  // ── Internal Routes (Level 2) ───────────────────────────────────────────
+
+  async getInternalRoutes(): Promise<InternalRoute[]> {
+    const res = await fetch(`${API_BASE_URL}/api/admin/internal-routes`, {
+      headers: authHeaders(),
+    });
+    return handleResponse<InternalRoute[]>(res);
+  },
+
+  async createInternalRoute(
+    name: string,
+    slug: string,
+    telecomGatewayId: string,
+  ): Promise<InternalRoute> {
+    const res = await fetch(`${API_BASE_URL}/api/admin/internal-routes`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ name, slug, telecom_gateway_id: telecomGatewayId }),
+    });
+    return handleResponse<InternalRoute>(res);
+  },
+
+  async getRouteLogs(slug: string): Promise<SMSLog[]> {
     const res = await fetch(
-      `${API_BASE_URL}/api/admin/gateways/${slug}/logs`,
+      `${API_BASE_URL}/api/admin/internal-routes/${slug}/logs`,
       { headers: authHeaders() },
     );
     return handleResponse<SMSLog[]>(res);
   },
+
+  // ── Stats ───────────────────────────────────────────────────────────────
 
   async getStats(): Promise<StatsResponse> {
     const res = await fetch(`${API_BASE_URL}/api/admin/stats`, {
@@ -92,6 +123,8 @@ export const api = {
     return handleResponse<StatsResponse>(res);
   },
 
+  // ── SMS Ingestion ────────────────────────────────────────────────────────
+
   async sendSMS(
     slug: string,
     apiKey: string,
@@ -99,7 +132,7 @@ export const api = {
     to: string,
     text: string,
   ): Promise<unknown> {
-    const res = await fetch(`${API_BASE_URL}/api/v1/gateway/${slug}/sms/send`, {
+    const res = await fetch(`${API_BASE_URL}/api/v1/route/${slug}/sms/send`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -23,14 +23,12 @@ func NewGatewayHandler(db *sql.DB) *GatewayHandler {
 	return &GatewayHandler{DB: db}
 }
 
-// logTableName converts a slug into the strict dynamic table name
-// convention: gw_table_<slug>_logs. The slug is validated to be a safe SQL
-// identifier (lowercase alphanumeric + underscore only) before use.
-func logTableName(slug string) string {
-	return fmt.Sprintf("gw_table_%s_logs", slug)
+// routeLogTableName converts an internal route slug into the strict dynamic
+// table name: route_<slug>_logs.
+func routeLogTableName(slug string) string {
+	return fmt.Sprintf("route_%s_logs", slug)
 }
 
-// validateSlug ensures the slug is safe to interpolate into dynamic SQL.
 func validateSlug(slug string) error {
 	if slug == "" {
 		return fmt.Errorf("slug is required")
@@ -44,13 +42,95 @@ func validateSlug(slug string) error {
 	return nil
 }
 
-// CreateGateway inserts a new gateway record and dynamically creates its
-// dedicated log table via raw SQL.
-// POST /api/admin/gateways
-func (h *GatewayHandler) CreateGateway(c *gin.Context) {
+// ── Telecom Gateways (Level 1) ──────────────────────────────────────────────
+
+// CreateTelecomGateway inserts a new telecom gateway (Level 1).
+// POST /api/admin/telecom-gateways
+func (h *GatewayHandler) CreateTelecomGateway(c *gin.Context) {
 	var req struct {
-		Name string `json:"name"`
-		Slug string `json:"slug"`
+		Name     string `json:"name"`
+		Slug     string `json:"slug"`
+		Provider string `json:"provider"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	req.Slug = strings.TrimSpace(strings.ToLower(req.Slug))
+	req.Provider = strings.TrimSpace(req.Provider)
+	if req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		return
+	}
+	if req.Provider == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "provider is required"})
+		return
+	}
+	if err := validateSlug(req.Slug); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	apiKey := "tgk_" + uuid.NewString()
+
+	var gw models.TelecomGateway
+	err := h.DB.QueryRow(
+		`INSERT INTO telecom_gateways (name, slug, provider, api_key)
+		 VALUES ($1, $2, $3, $4)
+		 RETURNING id, name, slug, provider, api_key, created_at`,
+		req.Name, req.Slug, req.Provider, apiKey,
+	).Scan(&gw.ID, &gw.Name, &gw.Slug, &gw.Provider, &gw.APIKey, &gw.CreatedAt)
+	if err != nil {
+		if strings.Contains(err.Error(), "duplicate key") {
+			c.JSON(http.StatusConflict, gin.H{"error": "a telecom gateway with this slug already exists"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create telecom gateway"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gw)
+}
+
+// ListTelecomGateways returns all telecom gateways (Level 1).
+// GET /api/admin/telecom-gateways
+func (h *GatewayHandler) ListTelecomGateways(c *gin.Context) {
+	rows, err := h.DB.Query(
+		`SELECT id, name, slug, provider, api_key, created_at
+		 FROM telecom_gateways ORDER BY created_at DESC`,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch telecom gateways"})
+		return
+	}
+	defer rows.Close()
+
+	var gateways []models.TelecomGateway
+	for rows.Next() {
+		var g models.TelecomGateway
+		if err := rows.Scan(&g.ID, &g.Name, &g.Slug, &g.Provider, &g.APIKey, &g.CreatedAt); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to scan telecom gateway"})
+			return
+		}
+		gateways = append(gateways, g)
+	}
+	if gateways == nil {
+		gateways = []models.TelecomGateway{}
+	}
+	c.JSON(http.StatusOK, gateways)
+}
+
+// ── Internal Routes (Level 2) ───────────────────────────────────────────────
+
+// CreateInternalRoute inserts a new internal route (Level 2) linked to a
+// telecom gateway, and dynamically creates its dedicated log table.
+// POST /api/admin/internal-routes
+func (h *GatewayHandler) CreateInternalRoute(c *gin.Context) {
+	var req struct {
+		Name             string `json:"name"`
+		Slug             string `json:"slug"`
+		TelecomGatewayID string `json:"telecom_gateway_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
@@ -66,26 +146,51 @@ func (h *GatewayHandler) CreateGateway(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	apiKey := "gwk_" + uuid.NewString()
-
-	var gateway models.Gateway
-	err := h.DB.QueryRow(
-		`INSERT INTO gateways (name, slug, api_key)
-		 VALUES ($1, $2, $3)
-		 RETURNING id, name, slug, api_key, created_at`,
-		req.Name, req.Slug, apiKey,
-	).Scan(&gateway.ID, &gateway.Name, &gateway.Slug, &gateway.APIKey, &gateway.CreatedAt)
-	if err != nil {
-		if strings.Contains(err.Error(), "duplicate key") {
-			c.JSON(http.StatusConflict, gin.H{"error": "a gateway with this slug already exists"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create gateway"})
+	if req.TelecomGatewayID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "telecom_gateway_id is required"})
 		return
 	}
 
-	table := logTableName(req.Slug)
+	var exists bool
+	err := h.DB.QueryRow(
+		"SELECT EXISTS(SELECT 1 FROM telecom_gateways WHERE id = $1)",
+		req.TelecomGatewayID,
+	).Scan(&exists)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+		return
+	}
+	if !exists {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "telecom gateway not found"})
+		return
+	}
+
+	apiKey := "irk_" + uuid.NewString()
+
+	var route models.InternalRoute
+	err = h.DB.QueryRow(
+		`INSERT INTO internal_routes (name, slug, telecom_gateway_id, api_key)
+		 VALUES ($1, $2, $3, $4)
+		 RETURNING id, name, slug, telecom_gateway_id, api_key, created_at`,
+		req.Name, req.Slug, req.TelecomGatewayID, apiKey,
+	).Scan(&route.ID, &route.Name, &route.Slug, &route.TelecomGatewayID, &route.APIKey, &route.CreatedAt)
+	if err != nil {
+		if strings.Contains(err.Error(), "duplicate key") {
+			c.JSON(http.StatusConflict, gin.H{"error": "an internal route with this slug already exists"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create internal route"})
+		return
+	}
+
+	var tgName string
+	_ = h.DB.QueryRow(
+		"SELECT name FROM telecom_gateways WHERE id = $1",
+		route.TelecomGatewayID,
+	).Scan(&tgName)
+	route.TelecomGatewayName = tgName
+
+	table := routeLogTableName(req.Slug)
 	createSQL := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
 			id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -99,65 +204,70 @@ func (h *GatewayHandler) CreateGateway(c *gin.Context) {
 
 	if _, err := h.DB.Exec(createSQL); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":          "gateway record created but log table creation failed",
-			"table_error":    err.Error(),
-			"created_gateway": gateway,
+			"error":           "internal route created but log table creation failed",
+			"table_error":     err.Error(),
+			"created_route":   route,
 		})
 		return
 	}
 
-	c.JSON(http.StatusCreated, gateway)
+	c.JSON(http.StatusCreated, route)
 }
 
-// ListGateways returns all gateway records.
-// GET /api/admin/gateways
-func (h *GatewayHandler) ListGateways(c *gin.Context) {
+// ListInternalRoutes returns all internal routes (Level 2) with their
+// associated telecom gateway name.
+// GET /api/admin/internal-routes
+func (h *GatewayHandler) ListInternalRoutes(c *gin.Context) {
 	rows, err := h.DB.Query(
-		"SELECT id, name, slug, api_key, created_at FROM gateways ORDER BY created_at DESC",
+		`SELECT r.id, r.name, r.slug, r.telecom_gateway_id, g.name, r.api_key, r.created_at
+		 FROM internal_routes r
+		 JOIN telecom_gateways g ON r.telecom_gateway_id = g.id
+		 ORDER BY r.created_at DESC`,
 	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch gateways"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch internal routes"})
 		return
 	}
 	defer rows.Close()
 
-	var gateways []models.Gateway
+	var routes []models.InternalRoute
 	for rows.Next() {
-		var g models.Gateway
-		if err := rows.Scan(&g.ID, &g.Name, &g.Slug, &g.APIKey, &g.CreatedAt); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to scan gateway"})
+		var r models.InternalRoute
+		if err := rows.Scan(&r.ID, &r.Name, &r.Slug, &r.TelecomGatewayID, &r.TelecomGatewayName, &r.APIKey, &r.CreatedAt); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to scan internal route"})
 			return
 		}
-		gateways = append(gateways, g)
+		routes = append(routes, r)
 	}
-	if gateways == nil {
-		gateways = []models.Gateway{}
+	if routes == nil {
+		routes = []models.InternalRoute{}
 	}
-	c.JSON(http.StatusOK, gateways)
+	c.JSON(http.StatusOK, routes)
 }
 
-// GetGatewayLogs queries the specific gateway's dynamic log table and returns
-// the real records.
-// GET /api/admin/gateways/:gateway_slug/logs
-func (h *GatewayHandler) GetGatewayLogs(c *gin.Context) {
-	slug := strings.ToLower(c.Param("gateway_slug"))
+// GetRouteLogs queries the specific internal route's dynamic log table.
+// GET /api/admin/internal-routes/:route_slug/logs
+func (h *GatewayHandler) GetRouteLogs(c *gin.Context) {
+	slug := strings.ToLower(c.Param("route_slug"))
 	if err := validateSlug(slug); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	var exists bool
-	err := h.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM gateways WHERE slug = $1)", slug).Scan(&exists)
+	err := h.DB.QueryRow(
+		"SELECT EXISTS(SELECT 1 FROM internal_routes WHERE slug = $1)", slug,
+	).Scan(&exists)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
 		return
 	}
 	if !exists {
-		c.JSON(http.StatusNotFound, gin.H{"error": "gateway not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "internal route not found"})
 		return
 	}
 
-	table := logTableName(slug)
+	table := routeLogTableName(slug)
 	query := fmt.Sprintf(
 		`SELECT id, sender_id, receiver_phone, message_text, status, received_at
 		 FROM %s ORDER BY received_at DESC LIMIT 1000`, table,
@@ -165,7 +275,7 @@ func (h *GatewayHandler) GetGatewayLogs(c *gin.Context) {
 
 	rows, err := h.DB.Query(query)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query gateway logs"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query route logs"})
 		return
 	}
 	defer rows.Close()
