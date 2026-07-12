@@ -24,7 +24,7 @@ func NewSMSHandler(db *sql.DB) *SMSHandler {
 // POST /api/v1/route/:route_slug/sms/send
 func (h *SMSHandler) SendSMS(c *gin.Context) {
 	slug := strings.ToLower(c.Param("route_slug"))
-	if err := validateSlug(slug); err != nil {
+	if err := ValidateSlug(slug); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -63,7 +63,7 @@ func (h *SMSHandler) SendSMS(c *gin.Context) {
 		return
 	}
 
-	table := routeLogTableName(slug)
+	table := RouteLogTableName(slug)
 	insertSQL := fmt.Sprintf(
 		`INSERT INTO %s (sender_id, receiver_phone, message_text, status)
 		 VALUES ($1, $2, $3, 'received')

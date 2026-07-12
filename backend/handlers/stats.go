@@ -54,7 +54,7 @@ func (h *StatsHandler) Stats(c *gin.Context) {
 
 	totalLogs := 0
 	for _, slug := range slugs {
-		table := routeLogTableName(slug)
+		table := RouteLogTableName(slug)
 		var count int
 		err := h.DB.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", table)).Scan(&count)
 		if err != nil {

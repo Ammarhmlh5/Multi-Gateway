@@ -5,8 +5,7 @@ import (
 
 	"telecom-suite/config"
 	"telecom-suite/database"
-	"telecom-suite/handlers"
-	"telecom-suite/middleware"
+	"telecom-suite/routes"
 
 	"github.com/gin-gonic/gin"
 )
@@ -21,50 +20,7 @@ func main() {
 	defer db.Close()
 
 	r := gin.Default()
-
-	r.Use(func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-KEY")
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
-			return
-		}
-		c.Next()
-	})
-
-	r.GET("/api/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
-	})
-
-	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret)
-	gatewayHandler := handlers.NewGatewayHandler(db)
-	smsHandler := handlers.NewSMSHandler(db)
-	statsHandler := handlers.NewStatsHandler(db)
-
-	api := r.Group("/api")
-	{
-		api.POST("/admin/login", authHandler.Login)
-
-		admin := api.Group("/admin")
-		admin.Use(middleware.JWTAuth(cfg.JWTSecret))
-		{
-			// Level 1: Telecom Gateways
-			admin.POST("/telecom-gateways", gatewayHandler.CreateTelecomGateway)
-			admin.GET("/telecom-gateways", gatewayHandler.ListTelecomGateways)
-
-			// Level 2: Internal Routes
-			admin.POST("/internal-routes", gatewayHandler.CreateInternalRoute)
-			admin.GET("/internal-routes", gatewayHandler.ListInternalRoutes)
-			admin.GET("/internal-routes/:route_slug/logs", gatewayHandler.GetRouteLogs)
-
-			// Stats
-			admin.GET("/stats", statsHandler.Stats)
-		}
-
-		// SMS ingestion into an internal route
-		api.POST("/v1/route/:route_slug/sms/send", smsHandler.SendSMS)
-	}
+	routes.Register(r, db, cfg.JWTSecret)
 
 	log.Printf("Telecom Suite API listening on port %s", cfg.Port)
 	if err := r.Run(":" + cfg.Port); err != nil {
